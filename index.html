@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" class="lock">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -47,6 +47,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 .backup h2{font-size:1rem;margin:0}
 .backup .row{display:flex;gap:10px}
 .status{margin:0;color:var(--muted);font-size:.9rem;min-height:1.2em}
+@media (min-height:560px){html.lock,html.lock body{overflow:hidden;height:100%;overscroll-behavior:none}html.lock body{touch-action:none}}
 .hidden{display:none}
 @media (prefers-reduced-motion:reduce){.card{transition:none}}
 </style>
@@ -161,6 +162,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
   function setMode(edit){
     $('study').classList.toggle('hidden', edit);
     $('edit').classList.toggle('hidden', !edit);
+    document.documentElement.classList.toggle('lock', !edit);
     $('tabStudy').setAttribute('aria-pressed', String(!edit));
     $('tabEdit').setAttribute('aria-pressed', String(edit));
     if (edit) renderList(); else { setFlipped(false); showCard(); }
