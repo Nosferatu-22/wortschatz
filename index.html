@@ -22,7 +22,7 @@ h1{font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-.01em}
 .tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .count{text-align:center;color:var(--muted);margin:0 0 12px;font-weight:600}
-.scene{perspective:1200px}
+.scene{perspective:1200px;touch-action:pan-y}
 .card{position:relative;width:100%;aspect-ratio:4/3;border:0;padding:0;background:none;cursor:pointer;font:inherit;transform-style:preserve-3d;transition:transform .45s ease;display:block}
 .card.flipped{transform:rotateY(180deg)}
 .face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;border-radius:20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;font-size:clamp(1.8rem,8vw,2.6rem);font-weight:800;word-break:break-word;line-height:1.15}
@@ -66,7 +66,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     <div id="studyBody">
       <p class="count" id="count"></p>
       <div class="scene"><button class="card" id="card" aria-label="Перевернуть карточку"><span class="face front" id="front"></span><span class="face back" id="back"></span></button></div>
-      <p class="hint">Нажми на карточку, чтобы перевернуть</p>
+      <p class="hint">Нажми на карточку, чтобы перевернуть. Свайп влево — дальше, вправо — назад.</p>
       <div class="controls">
         <button class="btn" id="prev">Назад</button>
         <button class="btn" id="shuffle">Перемешать</button>
@@ -174,7 +174,23 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     renderList(); $('de').focus();
   }
 
-  $('card').addEventListener('click', function(){ setFlipped(!flipped); });
+  var sx = 0, sy = 0, tracking = false, swiped = false;
+  var scene = document.querySelector('.scene');
+  scene.addEventListener('touchstart', function(e){
+    var t = e.changedTouches[0];
+    sx = t.clientX; sy = t.clientY; tracking = true; swiped = false;
+  }, {passive: true});
+  scene.addEventListener('touchend', function(e){
+    if (!tracking) return;
+    tracking = false;
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { swiped = true; go(dx < 0 ? 1 : -1); }
+  }, {passive: true});
+  scene.addEventListener('touchcancel', function(){ tracking = false; }, {passive: true});
+  $('card').addEventListener('click', function(){
+    if (swiped) { swiped = false; return; }
+    setFlipped(!flipped);
+  });
   $('next').addEventListener('click', function(){ go(1); });
   $('prev').addEventListener('click', function(){ go(-1); });
   $('shuffle').addEventListener('click', function(){
