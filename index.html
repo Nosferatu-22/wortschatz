@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wortschatz">
+<title>Wortschatz</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EDF0F3;--ink:#16202B;--muted:#5B6877;--front:#1D3557;--front-ink:#F5F7FA;--back:#F4C95D;--back-ink:#1B1B1B;--panel:#FFFFFF;--line:#D3D9E0;--accent:#1D3557;--accent-ink:#fff;--danger:#B3261E;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161B;--ink:#E8ECF1;--muted:#98A4B3;--front:#2B4C7E;--front-ink:#fff;--back:#E9BE4E;--panel:#1B2128;--line:#2C343D;--accent:#8FB4E8;--accent-ink:#0f1720;--danger:#F2A09A;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161B;--ink:#E8ECF1;--muted:#98A4B3;--front:#2B4C7E;--front-ink:#fff;--back:#E9BE4E;--panel:#1B2128;--line:#2C343D;--accent:#8FB4E8;--accent-ink:#0f1720;--danger:#F2A09A;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
+main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+h1{font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-.01em}
+.tabs{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px}
+.tabs button{border:0;background:none;color:var(--muted);font:inherit;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.count{text-align:center;color:var(--muted);margin:0 0 12px;font-weight:600}
+.scene{perspective:1200px}
+.card{position:relative;width:100%;aspect-ratio:4/3;border:0;padding:0;background:none;cursor:pointer;font:inherit;transform-style:preserve-3d;transition:transform .45s ease;display:block}
+.card.flipped{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;border-radius:20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;font-size:clamp(1.8rem,8vw,2.6rem);font-weight:800;word-break:break-word;line-height:1.15}
+.front{background:var(--front);color:var(--front-ink)}
+.back{background:var(--back);color:var(--back-ink);transform:rotateY(180deg)}
+.hint{text-align:center;color:var(--muted);font-size:.9rem;margin:12px 0 0}
+.controls{display:flex;gap:10px;margin-top:20px}
+.btn{flex:1;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-weight:600;padding:14px 10px;border-radius:14px;cursor:pointer;font-size:1rem}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.empty{text-align:center;color:var(--muted);padding:48px 12px;line-height:1.5}
+.add{display:grid;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:20px}
+.add label{display:grid;gap:4px;font-size:.9rem;font-weight:600;color:var(--muted)}
+.add input{font:inherit;font-size:1rem;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.list li{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.list .w{flex:1;min-width:0;word-break:break-word}
+.list .w b{display:block}
+.list .w span{color:var(--muted)}
+.del{border:0;background:none;color:var(--danger);font:inherit;font-weight:600;cursor:pointer;padding:8px}
+.total{color:var(--muted);font-weight:600;margin:0 0 10px}
+.hidden{display:none}
+@media (prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Wortschatz</h1>
+    <div class="tabs" role="group" aria-label="Режим">
+      <button id="tabStudy" aria-pressed="true">Учить</button>
+      <button id="tabEdit" aria-pressed="false">Редактор</button>
+    </div>
+  </header>
+
+  <section id="study">
+    <div id="studyEmpty" class="empty hidden">Пока нет карточек. Открой «Редактор» и добавь первое слово.</div>
+    <div id="studyBody">
+      <p class="count" id="count"></p>
+      <div class="scene"><button class="card" id="card" aria-label="Перевернуть карточку"><span class="face front" id="front"></span><span class="face back" id="back"></span></button></div>
+      <p class="hint">Нажми на карточку, чтобы перевернуть</p>
+      <div class="controls">
+        <button class="btn" id="prev">Назад</button>
+        <button class="btn" id="shuffle">Перемешать</button>
+        <button class="btn primary" id="next">Дальше</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="edit" class="hidden">
+    <div class="add">
+      <label>Немецкое слово<input id="de" autocomplete="off" lang="de"></label>
+      <label>Перевод на русский<input id="ru" autocomplete="off" lang="ru"></label>
+      <button class="btn primary" id="addBtn">Добавить карточку</button>
+    </div>
+    <p class="total" id="total"></p>
+    <ul class="list" id="list"></ul>
+  </section>
+</main>
+
+<script>
+(function(){
+  var KEY = 'wortschatz:v1';
+  var SAMPLE = [
+    {id:'a1', de:'der Apfel', ru:'яблоко'},
+    {id:'a2', de:'die Straße', ru:'улица'},
+    {id:'a3', de:'vergessen', ru:'забывать'}
+  ];
+  var cards = load();
+  var idx = 0;
+  var flipped = false;
+
+  function load(){
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) { var p = JSON.parse(raw); if (Array.isArray(p)) return p; }
+    } catch (e) {}
+    return SAMPLE.slice();
+  }
+  function save(){
+    try { localStorage.setItem(KEY, JSON.stringify(cards)); } catch (e) {}
+  }
+  var $ = function(id){ return document.getElementById(id); };
+
+  function showCard(){
+    var has = cards.length > 0;
+    $('studyEmpty').classList.toggle('hidden', has);
+    $('studyBody').classList.toggle('hidden', !has);
+    if (!has) return;
+    if (idx >= cards.length) idx = 0;
+    if (idx < 0) idx = cards.length - 1;
+    $('front').textContent = cards[idx].de;
+    $('back').textContent = cards[idx].ru;
+    $('count').textContent = (idx + 1) + ' из ' + cards.length;
+  }
+  function setFlipped(v){
+    flipped = v;
+    $('card').classList.toggle('flipped', v);
+  }
+  function go(step){
+    var wasFlipped = flipped;
+    setFlipped(false);
+    var apply = function(){ idx += step; showCard(); };
+    if (wasFlipped) setTimeout(apply, 220); else apply();
+  }
+  function renderList(){
+    var ul = $('list');
+    ul.textContent = '';
+    $('total').textContent = 'Всего карточек: ' + cards.length;
+    cards.forEach(function(c){
+      var li = document.createElement('li');
+      var w = document.createElement('div'); w.className = 'w';
+      var b = document.createElement('b'); b.textContent = c.de;
+      var s = document.createElement('span'); s.textContent = c.ru;
+      w.appendChild(b); w.appendChild(s);
+      var d = document.createElement('button'); d.className = 'del'; d.textContent = 'Удалить';
+      d.addEventListener('click', function(){
+        cards = cards.filter(function(x){ return x.id !== c.id; });
+        save(); renderList(); showCard();
+      });
+      li.appendChild(w); li.appendChild(d); ul.appendChild(li);
+    });
+  }
+  function setMode(edit){
+    $('study').classList.toggle('hidden', edit);
+    $('edit').classList.toggle('hidden', !edit);
+    $('tabStudy').setAttribute('aria-pressed', String(!edit));
+    $('tabEdit').setAttribute('aria-pressed', String(edit));
+    if (edit) renderList(); else { setFlipped(false); showCard(); }
+  }
+  function add(){
+    var de = $('de').value.trim(), ru = $('ru').value.trim();
+    if (!de || !ru) { (de ? $('ru') : $('de')).focus(); return; }
+    cards.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), de: de, ru: ru});
+    save();
+    $('de').value = ''; $('ru').value = '';
+    renderList(); $('de').focus();
+  }
+
+  $('card').addEventListener('click', function(){ setFlipped(!flipped); });
+  $('next').addEventListener('click', function(){ go(1); });
+  $('prev').addEventListener('click', function(){ go(-1); });
+  $('shuffle').addEventListener('click', function(){
+    setFlipped(false);
+    for (var i = cards.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = cards[i]; cards[i] = cards[j]; cards[j] = t;
+    }
+    idx = 0; save(); showCard();
+  });
+  $('tabStudy').addEventListener('click', function(){ setMode(false); });
+  $('tabEdit').addEventListener('click', function(){ setMode(true); });
+  $('addBtn').addEventListener('click', add);
+  $('ru').addEventListener('keydown', function(e){ if (e.key === 'Enter') add(); });
+  $('de').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('ru').focus(); });
+  document.addEventListener('keydown', function(e){
+    if ($('study').classList.contains('hidden')) return;
+    if (e.key === 'ArrowRight') go(1);
+    else if (e.key === 'ArrowLeft') go(-1);
+  });
+
+  showCard();
+})();
+</script>
+</body>
+</html>
