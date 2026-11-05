@@ -43,6 +43,10 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 .list .w span{color:var(--muted)}
 .del{border:0;background:none;color:var(--danger);font:inherit;font-weight:600;cursor:pointer;padding:8px}
 .total{color:var(--muted);font-weight:600;margin:0 0 10px}
+.backup{display:grid;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:20px}
+.backup h2{font-size:1rem;margin:0}
+.backup .row{display:flex;gap:10px}
+.status{margin:0;color:var(--muted);font-size:.9rem;min-height:1.2em}
 .hidden{display:none}
 @media (prefers-reduced-motion:reduce){.card{transition:none}}
 </style>
@@ -76,6 +80,15 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
       <label>Немецкое слово<input id="de" autocomplete="off" lang="de"></label>
       <label>Перевод на русский<input id="ru" autocomplete="off" lang="ru"></label>
       <button class="btn primary" id="addBtn">Добавить карточку</button>
+    </div>
+    <div class="backup">
+      <h2>Резервная копия</h2>
+      <div class="row">
+        <button class="btn" id="exportBtn">Сохранить в файл</button>
+        <button class="btn" id="importBtn">Загрузить из файла</button>
+      </div>
+      <input type="file" id="file" accept=".json,application/json" class="hidden">
+      <p class="status" id="status" role="status"></p>
     </div>
     <p class="total" id="total"></p>
     <ul class="list" id="list"></ul>
@@ -181,6 +194,51 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     if ($('study').classList.contains('hidden')) return;
     if (e.key === 'ArrowRight') go(1);
     else if (e.key === 'ArrowLeft') go(-1);
+  });
+
+  function say(t){ $('status').textContent = t; }
+  function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+  function key(de, ru){ return JSON.stringify([de, ru]); }
+
+  $('exportBtn').addEventListener('click', function(){
+    if (!cards.length) { say('Список пуст, сохранять нечего.'); return; }
+    var data = JSON.stringify(cards.map(function(c){ return {de: c.de, ru: c.ru}; }), null, 2);
+    var url = URL.createObjectURL(new Blob([data], {type: 'application/json'}));
+    var a = document.createElement('a');
+    a.href = url; a.download = 'wortschatz-slova.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    say('Файл сохранён. Карточек: ' + cards.length + '.');
+  });
+  $('importBtn').addEventListener('click', function(){ $('file').click(); });
+  $('file').addEventListener('change', function(){
+    var input = this, f = input.files && input.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function(){
+      try {
+        var arr = JSON.parse(r.result);
+        if (!Array.isArray(arr)) throw new Error('format');
+        var seen = {};
+        cards.forEach(function(c){ seen[key(c.de, c.ru)] = 1; });
+        var added = 0, skipped = 0;
+        arr.forEach(function(x){
+          if (!x || typeof x.de !== 'string' || typeof x.ru !== 'string') return;
+          var de = x.de.trim(), ru = x.ru.trim();
+          if (!de || !ru) return;
+          var k = key(de, ru);
+          if (seen[k]) { skipped++; return; }
+          seen[k] = 1; cards.push({id: newId(), de: de, ru: ru}); added++;
+        });
+        save(); renderList(); showCard();
+        say('Добавлено карточек: ' + added + (skipped ? '. Повторов пропущено: ' + skipped : '') + '.');
+      } catch (e) {
+        say('Не удалось прочитать файл. Нужен файл, сохранённый кнопкой «Сохранить в файл».');
+      }
+      input.value = '';
+    };
+    r.onerror = function(){ say('Не удалось открыть файл.'); input.value = ''; };
+    r.readAsText(f);
   });
 
   showCard();
