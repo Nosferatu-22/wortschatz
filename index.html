@@ -136,6 +136,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     $('card').classList.toggle('flipped', v);
   }
   function go(step){
+    if (!cards.length) return;
+    if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { slide(step); return; }
     var wasFlipped = flipped;
     setFlipped(false);
     var apply = function(){ idx += step; showCard(); };
@@ -176,21 +178,70 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     renderList(); $('de').focus();
   }
 
-  var sx = 0, sy = 0, tracking = false, swiped = false;
+  var sx = 0, sy = 0, tracking = false, swiped = false, dragging = false, decided = false, busy = false;
   var scene = document.querySelector('.scene');
+  var EASE_BACK = 'transform .22s ease-out, opacity .22s ease-out';
+  function slide(dir){
+    if (busy) return;
+    busy = true;
+    var w = window.innerWidth, card = $('card');
+    scene.style.transition = 'transform .18s ease-in, opacity .18s ease-in';
+    scene.style.transform = 'translateX(' + (-dir * w) + 'px) rotate(' + (-dir * 8) + 'deg)';
+    scene.style.opacity = '0';
+    setTimeout(function(){
+      card.style.transition = 'none';
+      setFlipped(false);
+      idx += dir;
+      showCard();
+      scene.style.transition = 'none';
+      scene.style.transform = 'translateX(' + (dir * w * 0.5) + 'px)';
+      void scene.offsetWidth;
+      card.style.transition = '';
+      scene.style.transition = EASE_BACK;
+      scene.style.transform = '';
+      scene.style.opacity = '';
+      setTimeout(function(){ scene.style.transition = ''; busy = false; }, 240);
+    }, 190);
+  }
+  function springBack(){
+    scene.style.transition = EASE_BACK;
+    scene.style.transform = '';
+    scene.style.opacity = '';
+  }
   scene.addEventListener('touchstart', function(e){
+    if (busy) return;
     var t = e.changedTouches[0];
-    sx = t.clientX; sy = t.clientY; tracking = true; swiped = false;
+    sx = t.clientX; sy = t.clientY; tracking = true; swiped = false; dragging = false; decided = false;
+  }, {passive: true});
+  scene.addEventListener('touchmove', function(e){
+    if (!tracking || busy) return;
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (!decided) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      decided = true;
+      if (Math.abs(dx) > Math.abs(dy)) { dragging = true; swiped = true; scene.style.transition = 'none'; }
+    }
+    if (dragging) {
+      scene.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx * 0.03) + 'deg)';
+      scene.style.opacity = String(1 - Math.min(Math.abs(dx) / (window.innerWidth * 1.2), 0.5));
+    }
   }, {passive: true});
   scene.addEventListener('touchend', function(e){
     if (!tracking) return;
     tracking = false;
-    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { swiped = true; go(dx < 0 ? 1 : -1); }
+    if (swiped) setTimeout(function(){ swiped = false; }, 350);
+    if (!dragging) return;
+    dragging = false;
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > Math.min(110, window.innerWidth * 0.25)) slide(dx < 0 ? 1 : -1);
+    else springBack();
   }, {passive: true});
-  scene.addEventListener('touchcancel', function(){ tracking = false; }, {passive: true});
+  scene.addEventListener('touchcancel', function(){
+    tracking = false;
+    if (dragging) { dragging = false; springBack(); }
+  }, {passive: true});
   $('card').addEventListener('click', function(){
-    if (swiped) { swiped = false; return; }
+    if (swiped) return;
     setFlipped(!flipped);
   });
   $('next').addEventListener('click', function(){ go(1); });
