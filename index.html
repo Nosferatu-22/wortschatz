@@ -48,6 +48,15 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 .backup .row{display:flex;gap:10px}
 .status{margin:0;color:var(--muted);font-size:.9rem;min-height:1.2em}
 @media (min-height:560px){html.lock,html.lock body{overflow:hidden;height:100%;overscroll-behavior:none}html.lock body{touch-action:none}}
+.btn:disabled{opacity:.5;cursor:default}
+.list li{flex-wrap:wrap}
+.list .w{flex:1 1 100%}
+.list li.done .w{opacity:.55}
+.list li.done .w b::after{content:" ✓";color:var(--accent)}
+.acts{display:flex;gap:4px;flex-wrap:wrap}
+.act{border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:8px 10px 8px 0}
+.list li.editing input{flex:1 1 100%;font:inherit;font-size:1rem;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.learn{width:100%;margin-top:10px}
 .hidden{display:none}
 @media (prefers-reduced-motion:reduce){.card{transition:none}}
 </style>
@@ -73,6 +82,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
         <button class="btn" id="shuffle">Перемешать</button>
         <button class="btn primary" id="next">Дальше</button>
       </div>
+      <button class="btn learn" id="learnBtn">✓ Выучил, больше не показывать</button>
     </div>
   </section>
 
@@ -82,6 +92,11 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
       <label>Перевод на русский<input id="ru" autocomplete="off" lang="ru"></label>
       <button class="btn primary" id="addBtn">Добавить карточку</button>
     </div>
+    <div class="backup" id="cloud">
+      <h2>Облако</h2>
+      <p class="status" id="cloudStatus">Подключаюсь…</p>
+      <button class="btn primary" id="signBtn" disabled>Войти через Google</button>
+    </div>
     <div class="backup">
       <h2>Резервная копия</h2>
       <div class="row">
@@ -90,6 +105,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
       </div>
       <input type="file" id="file" accept=".json,application/json" class="hidden">
       <p class="status" id="status" role="status"></p>
+      <p class="status" id="persist"></p>
     </div>
     <p class="total" id="total"></p>
     <ul class="list" id="list"></ul>
@@ -97,6 +113,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 </main>
 
 <script>
+var firebaseConfig = {
+  apiKey: "AIzaSyDB_ijnKg3eM103e3qpu65x9w99FmalgrQ",
+  authDomain: "wortschatz-de-ru.firebaseapp.com",
+  projectId: "wortschatz-de-ru",
+  storageBucket: "wortschatz-de-ru.firebasestorage.app",
+  messagingSenderId: "620129320317",
+  appId: "1:620129320317:web:1e731e8b895b997ecb2014"
+};
 (function(){
   var KEY = 'wortschatz:v1';
   var SAMPLE = [
@@ -107,6 +131,10 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
   var cards = load();
   var idx = 0;
   var flipped = false;
+  var cloudPush = function(){};
+  var applyingRemote = false;
+  var DIRTY = 'wortschatz:dirty';
+  var changeSeq = 0, ackedSeq = 0;
 
   function load(){
     try {
@@ -117,48 +145,93 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
   }
   function save(){
     try { localStorage.setItem(KEY, JSON.stringify(cards)); } catch (e) {}
+    if (!applyingRemote) {
+      changeSeq++;
+      try { localStorage.setItem(DIRTY, '1'); } catch (e) {}
+      cloudPush();
+    }
   }
   var $ = function(id){ return document.getElementById(id); };
 
+  function pool(){ return cards.filter(function(c){ return !c.learned; }); }
   function showCard(){
-    var has = cards.length > 0;
+    var deck = pool(), has = deck.length > 0;
     $('studyEmpty').classList.toggle('hidden', has);
     $('studyBody').classList.toggle('hidden', !has);
-    if (!has) return;
-    if (idx >= cards.length) idx = 0;
-    if (idx < 0) idx = cards.length - 1;
-    $('front').textContent = cards[idx].de;
-    $('back').textContent = cards[idx].ru;
-    $('count').textContent = (idx + 1) + ' из ' + cards.length;
+    if (!has) {
+      $('studyEmpty').textContent = cards.length
+        ? 'Все слова выучены! Вернуть их в учёбу можно в «Редакторе».'
+        : 'Пока нет карточек. Открой «Редактор» и добавь первое слово.';
+      return;
+    }
+    if (idx >= deck.length) idx = 0;
+    if (idx < 0) idx = deck.length - 1;
+    $('front').textContent = deck[idx].de;
+    $('back').textContent = deck[idx].ru;
+    var learnedN = cards.length - deck.length;
+    $('count').textContent = (idx + 1) + ' из ' + deck.length + (learnedN ? ' · выучено: ' + learnedN : '');
   }
   function setFlipped(v){
     flipped = v;
     $('card').classList.toggle('flipped', v);
   }
   function go(step){
-    if (!cards.length) return;
+    if (!pool().length) return;
     if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { slide(step); return; }
     var wasFlipped = flipped;
     setFlipped(false);
     var apply = function(){ idx += step; showCard(); };
     if (wasFlipped) setTimeout(apply, 220); else apply();
   }
+  var editingId = null;
+  function mkBtn(text, cls, fn){
+    var b = document.createElement('button');
+    b.className = cls; b.textContent = text;
+    b.addEventListener('click', fn);
+    return b;
+  }
   function renderList(){
     var ul = $('list');
     ul.textContent = '';
-    $('total').textContent = 'Всего карточек: ' + cards.length;
+    var learnedN = cards.filter(function(c){ return c.learned; }).length;
+    $('total').textContent = 'Всего карточек: ' + cards.length + (learnedN ? ' · выучено: ' + learnedN : '');
     cards.forEach(function(c){
       var li = document.createElement('li');
+      if (c.id === editingId) {
+        li.className = 'editing';
+        var f1 = document.createElement('input'); f1.value = c.de; f1.lang = 'de'; f1.setAttribute('aria-label', 'Немецкое слово');
+        var f2 = document.createElement('input'); f2.value = c.ru; f2.lang = 'ru'; f2.setAttribute('aria-label', 'Перевод');
+        var saveEdit = function(){
+          var de = f1.value.trim(), ru = f2.value.trim();
+          if (!de || !ru) { (de ? f2 : f1).focus(); return; }
+          c.de = de; c.ru = ru; editingId = null;
+          save(); renderList(); showCard();
+        };
+        f1.addEventListener('keydown', function(e){ if (e.key === 'Enter') f2.focus(); });
+        f2.addEventListener('keydown', function(e){ if (e.key === 'Enter') saveEdit(); });
+        var ea = document.createElement('div'); ea.className = 'acts';
+        ea.appendChild(mkBtn('Сохранить', 'act', saveEdit));
+        ea.appendChild(mkBtn('Отмена', 'act', function(){ editingId = null; renderList(); }));
+        li.appendChild(f1); li.appendChild(f2); li.appendChild(ea); ul.appendChild(li);
+        f1.focus();
+        return;
+      }
+      if (c.learned) li.className = 'done';
       var w = document.createElement('div'); w.className = 'w';
       var b = document.createElement('b'); b.textContent = c.de;
       var s = document.createElement('span'); s.textContent = c.ru;
       w.appendChild(b); w.appendChild(s);
-      var d = document.createElement('button'); d.className = 'del'; d.textContent = 'Удалить';
-      d.addEventListener('click', function(){
+      var acts = document.createElement('div'); acts.className = 'acts';
+      acts.appendChild(mkBtn('Изменить', 'act', function(){ editingId = c.id; renderList(); }));
+      acts.appendChild(mkBtn(c.learned ? 'Вернуть в учёбу' : 'Выучено', 'act', function(){
+        if (c.learned) delete c.learned; else c.learned = true;
+        save(); renderList();
+      }));
+      acts.appendChild(mkBtn('Удалить', 'del', function(){
         cards = cards.filter(function(x){ return x.id !== c.id; });
         save(); renderList(); showCard();
-      });
-      li.appendChild(w); li.appendChild(d); ul.appendChild(li);
+      }));
+      li.appendChild(w); li.appendChild(acts); ul.appendChild(li);
     });
   }
   function setMode(edit){
@@ -245,6 +318,18 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     setFlipped(!flipped);
   });
   $('next').addEventListener('click', function(){ go(1); });
+  $('learnBtn').addEventListener('click', function(){
+    if (busy) return;
+    var deck = pool();
+    if (!deck.length) return;
+    if (idx >= deck.length) idx = 0;
+    deck[idx].learned = true;
+    save();
+    setFlipped(false);
+    if (!pool().length) { showCard(); return; }
+    idx -= 1;
+    go(1);
+  });
   $('prev').addEventListener('click', function(){ go(-1); });
   $('shuffle').addEventListener('click', function(){
     setFlipped(false);
@@ -271,7 +356,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 
   $('exportBtn').addEventListener('click', function(){
     if (!cards.length) { say('Список пуст, сохранять нечего.'); return; }
-    var data = JSON.stringify(cards.map(function(c){ return {de: c.de, ru: c.ru}; }), null, 2);
+    var data = JSON.stringify(cards.map(function(c){ return {de: c.de, ru: c.ru, learned: !!c.learned}; }), null, 2);
     var url = URL.createObjectURL(new Blob([data], {type: 'application/json'}));
     var a = document.createElement('a');
     a.href = url; a.download = 'wortschatz-slova.json';
@@ -297,7 +382,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
           if (!de || !ru) return;
           var k = key(de, ru);
           if (seen[k]) { skipped++; return; }
-          seen[k] = 1; cards.push({id: newId(), de: de, ru: ru}); added++;
+          seen[k] = 1; var nc = {id: newId(), de: de, ru: ru}; if (x.learned === true) nc.learned = true; cards.push(nc); added++;
         });
         save(); renderList(); showCard();
         say('Добавлено карточек: ' + added + (skipped ? '. Повторов пропущено: ' + skipped : '') + '.');
@@ -309,6 +394,143 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     r.onerror = function(){ say('Не удалось открыть файл.'); input.value = ''; };
     r.readAsText(f);
   });
+
+  function checkPersist(){
+    var el = $('persist');
+    try {
+      if (!(navigator.storage && navigator.storage.persist && navigator.storage.persisted)) {
+        el.textContent = 'Этот браузер не умеет защищать хранилище. Делай резервную копию.';
+        return;
+      }
+      navigator.storage.persisted().then(function(p){
+        return p ? p : navigator.storage.persist();
+      }).then(function(p){
+        el.textContent = p
+          ? 'Хранилище защищено: браузер не будет стирать слова сам при нехватке места.'
+          : 'Браузер не гарантирует сохранность слов. Делай резервную копию.';
+      }).catch(function(){});
+    } catch (e) {}
+  }
+  // ---------- Облако (Firebase) ----------
+  var fb = null, fbUser = null, unsub = null, pushTimer = null, firstSnap = true;
+  function cloudSay(t){ $('cloudStatus').textContent = t; }
+  function cleanCards(arr){
+    var out = [];
+    (arr || []).forEach(function(x){
+      if (!x || typeof x.de !== 'string' || typeof x.ru !== 'string') return;
+      var de = x.de.trim(), ru = x.ru.trim();
+      if (!de || !ru) return;
+      var o = {id: typeof x.id === 'string' && x.id ? x.id : newId(), de: de, ru: ru};
+      if (x.learned === true) o.learned = true;
+      out.push(o);
+    });
+    return out;
+  }
+  function applyRemote(list){
+    applyingRemote = true;
+    cards = cleanCards(list);
+    save();
+    applyingRemote = false;
+    if (idx >= cards.length) idx = 0;
+    renderList(); showCard();
+  }
+  function writeCloud(ref){
+    var seq = changeSeq;
+    var data = {cards: cards.map(function(c){ return {id: c.id, de: c.de, ru: c.ru, learned: !!c.learned}; }), updated: Date.now()};
+    return fb.fs.setDoc(ref, data).then(function(){
+      ackedSeq = seq;
+      if (seq === changeSeq) { try { localStorage.removeItem(DIRTY); } catch (e) {} }
+      if (fbUser) cloudSay('Синхронизировано: ' + cards.length + ' карт. Аккаунт: ' + fbUser.email);
+    }).catch(function(e){
+      cloudSay('Не удалось сохранить в облако (' + (e && e.code ? e.code : 'ошибка') + '). Слова сохранены на устройстве.');
+    });
+  }
+  function onUser(u){
+    fbUser = u;
+    if (unsub) { unsub(); unsub = null; }
+    clearTimeout(pushTimer);
+    if (!u) {
+      cloudPush = function(){};
+      $('signBtn').textContent = 'Войти через Google';
+      cloudSay('Не подключено. Слова хранятся только на этом устройстве.');
+      return;
+    }
+    $('signBtn').textContent = 'Выйти';
+    cloudSay('Вход выполнен: ' + u.email + '. Синхронизирую…');
+    var ref = fb.fs.doc(fb.db, 'users', u.uid);
+    var SYNCED = 'wortschatz:synced:' + u.uid;
+    firstSnap = true;
+    cloudPush = function(){
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(function(){ writeCloud(ref); }, 600);
+    };
+    unsub = fb.fs.onSnapshot(ref, function(snap){
+      if (snap.metadata.hasPendingWrites) return;
+      var remote = (snap.exists() && Array.isArray(snap.data().cards)) ? cleanCards(snap.data().cards) : null;
+      if (firstSnap) {
+        firstSnap = false;
+        var synced = false, dirty = false;
+        try { synced = !!localStorage.getItem(SYNCED); dirty = !!localStorage.getItem(DIRTY); } catch (e) {}
+        if (!synced) {
+          var seen = {}, merged = remote ? remote.slice() : [];
+          merged.forEach(function(c){ seen[key(c.de, c.ru)] = 1; });
+          cards.forEach(function(c){ if (!seen[key(c.de, c.ru)]) merged.push(c); });
+          applyRemote(merged);
+          writeCloud(ref).then(function(){ try { localStorage.setItem(SYNCED, '1'); } catch (e) {} });
+        } else if (dirty || !remote) {
+          writeCloud(ref);
+        } else {
+          applyRemote(remote);
+          cloudSay('Синхронизировано: ' + cards.length + ' карт. Аккаунт: ' + u.email);
+        }
+        return;
+      }
+      if (changeSeq !== ackedSeq || !remote) return;
+      applyRemote(remote);
+      cloudSay('Обновлено из облака: ' + cards.length + ' карт. Аккаунт: ' + u.email);
+    }, function(err){
+      var code = err && err.code ? err.code : 'ошибка';
+      cloudSay(code === 'permission-denied'
+        ? 'Нет доступа к базе. Проверь правила Firestore и почту в них.'
+        : 'Ошибка облака: ' + code);
+    });
+  }
+  function initCloud(){
+    var base = 'https://www.gstatic.com/firebasejs/10.14.1/';
+    return Promise.all([
+      import(base + 'firebase-app.js'),
+      import(base + 'firebase-auth.js'),
+      import(base + 'firebase-firestore.js')
+    ]).then(function(m){
+      fb = {app: m[0], auth: m[1], fs: m[2]};
+      var app = fb.app.initializeApp(firebaseConfig);
+      fb.a = fb.auth.getAuth(app);
+      fb.db = fb.fs.getFirestore(app);
+      fb.auth.getRedirectResult(fb.a).catch(function(e){
+        if (e && e.code) cloudSay('Не удалось войти: ' + e.code);
+      });
+      fb.auth.onAuthStateChanged(fb.a, onUser);
+      $('signBtn').disabled = false;
+    }).catch(function(){
+      cloudSay('Облако недоступно (нет интернета?). Слова сохраняются на этом устройстве.');
+    });
+  }
+  $('signBtn').addEventListener('click', function(){
+    if (!fb) return;
+    if (fbUser) { fb.auth.signOut(fb.a); return; }
+    var provider = new fb.auth.GoogleAuthProvider();
+    fb.auth.signInWithPopup(fb.a, provider).catch(function(e){
+      var c = e && e.code;
+      if (c === 'auth/popup-blocked' || c === 'auth/operation-not-supported-in-this-environment') {
+        fb.auth.signInWithRedirect(fb.a, provider);
+      } else if (c !== 'auth/popup-closed-by-user' && c !== 'auth/cancelled-popup-request') {
+        cloudSay('Не удалось войти: ' + (c || 'ошибка'));
+      }
+    });
+  });
+  initCloud();
+
+  checkPersist();
 
   showCard();
 })();
